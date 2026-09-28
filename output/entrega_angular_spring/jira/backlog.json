@@ -1,0 +1,222 @@
+[
+  {
+    "id": "RM-01",
+    "summary": "Estructurar el backend hexagonal",
+    "owner": "Backend",
+    "milestone": 0,
+    "points": 3,
+    "dependencies": "",
+    "acceptance": "Dominio y aplicación no importan Spring ni adaptadores; ArchUnit pasa.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-02",
+    "summary": "Persistencia PostgreSQL y RLS",
+    "owner": "Backend",
+    "milestone": 0,
+    "points": 5,
+    "dependencies": "RM-01",
+    "acceptance": "Migraciones crean perfiles, vehículos y viajes; las RPC autorizan y protegen concurrencia.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-03",
+    "summary": "Registro con Supabase Auth",
+    "owner": "Backend",
+    "milestone": 1,
+    "points": 3,
+    "dependencies": "RM-01, RM-02",
+    "acceptance": "Validar correo, nombre y contraseña; solo passenger/driver; respetar confirmación por correo.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-04",
+    "summary": "Login y renovación de sesión",
+    "owner": "Backend",
+    "milestone": 1,
+    "points": 3,
+    "dependencies": "RM-03",
+    "acceptance": "Login devuelve tokens; refresh rota la sesión; logout revoca renovación; errores no exponen secretos.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-05",
+    "summary": "Validar JWT en Spring Security",
+    "owner": "Backend",
+    "milestone": 1,
+    "points": 5,
+    "dependencies": "RM-04",
+    "acceptance": "Rechazar JWT sin firma válida, expirado, con issuer o audience erróneos; usar sujeto verificado.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-06",
+    "summary": "Endpoints para el Dashboard",
+    "owner": "Backend",
+    "milestone": 1,
+    "points": 3,
+    "dependencies": "RM-02, RM-05",
+    "acceptance": "GET perfil y viajes usan actor autenticado; POST viaje aplica reglas de negocio y RLS.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-07",
+    "summary": "Diseñar módulos de interfaz",
+    "owner": "Frontend",
+    "milestone": 1,
+    "points": 3,
+    "dependencies": "RM-06",
+    "acceptance": "Entregar Login, Registro, Dashboard y pago demo como SVG editables y tokens.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-08",
+    "summary": "Login Angular",
+    "owner": "Frontend",
+    "milestone": 1,
+    "points": 3,
+    "dependencies": "RM-04, RM-07",
+    "acceptance": "Validar formulario, mostrar carga/error, autenticar por HTTP y guardar tokens en memoria.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-09",
+    "summary": "Registro Angular",
+    "owner": "Frontend",
+    "milestone": 1,
+    "points": 3,
+    "dependencies": "RM-03, RM-07",
+    "acceptance": "Formulario tipado; elegir pasajero/conductor; mostrar confirmación por email si no hay sesión.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-10",
+    "summary": "Dashboard Angular",
+    "owner": "Frontend",
+    "milestone": 1,
+    "points": 5,
+    "dependencies": "RM-06, RM-08",
+    "acceptance": "Mostrar perfil, métricas e historial reales; filtrar; mostrar estados vacío/error/carga.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-11",
+    "summary": "Solicitud de viaje web",
+    "owner": "Frontend",
+    "milestone": 1,
+    "points": 3,
+    "dependencies": "RM-10",
+    "acceptance": "Enviar origen/destino; impedir solicitud duplicada desde UI; reflejar resultado y errores del backend.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-12",
+    "summary": "Pago visual de demostración",
+    "owner": "Frontend",
+    "milestone": 1,
+    "points": 2,
+    "dependencies": "RM-10",
+    "acceptance": "Botón para viaje completado del pasajero; diálogo anuncia demo; no pide tarjetas ni cobra.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-13",
+    "summary": "Entornos y tipado estricto",
+    "owner": "Ambos",
+    "milestone": 1,
+    "points": 2,
+    "dependencies": "RM-08",
+    "acceptance": "No publicar .env; generar config pública; TypeScript strict y cero any explícitos.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-14",
+    "summary": "Colección Postman y pruebas",
+    "owner": "Backend",
+    "milestone": 1,
+    "points": 3,
+    "dependencies": "RM-05, RM-06",
+    "acceptance": "Entorno sin secretos; pruebas de códigos HTTP; peticiones de escritura identificadas.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-15",
+    "summary": "Documentar SOLID y 12 factores",
+    "owner": "Ambos",
+    "milestone": 1,
+    "points": 2,
+    "dependencies": "RM-13",
+    "acceptance": "Cada principio/factor tiene evidencia y se distingue de pendientes de infraestructura.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-16",
+    "summary": "Crear ramas locales de promoción",
+    "owner": "Ambos",
+    "milestone": 1,
+    "points": 1,
+    "dependencies": "RM-15",
+    "acceptance": "main, preproduccion y produccion parten de una base versionada sin secretos.",
+    "state": "Implementado local"
+  },
+  {
+    "id": "RM-17",
+    "summary": "Prueba integral con cuentas de aceptación",
+    "owner": "Ambos",
+    "milestone": 2,
+    "points": 3,
+    "dependencies": "RM-09, RM-11",
+    "acceptance": "En ambiente de prueba: registro, confirmar correo, login, crear viaje, operar desde Flutter y ver historial Angular.",
+    "state": "Pendiente"
+  },
+  {
+    "id": "RM-18",
+    "summary": "Importar y organizar Jira y Figma",
+    "owner": "Frontend",
+    "milestone": 2,
+    "points": 2,
+    "dependencies": "RM-07, RM-15",
+    "acceptance": "Importar CSV, asignar personas y sprints; importar SVG a Figma, añadir componentes y conexiones del prototipo.",
+    "state": "Pendiente"
+  },
+  {
+    "id": "RM-19",
+    "summary": "Preparar remoto y CI/CD",
+    "owner": "Backend",
+    "milestone": 2,
+    "points": 5,
+    "dependencies": "RM-16",
+    "acceptance": "Crear remoto del equipo, proteger ramas y ejecutar pruebas y compilación en cada revisión.",
+    "state": "Pendiente"
+  },
+  {
+    "id": "RM-20",
+    "summary": "Desplegar preproducción y producción",
+    "owner": "Backend",
+    "milestone": 2,
+    "points": 5,
+    "dependencies": "RM-17, RM-19",
+    "acceptance": "Configurar HTTPS, BD separadas, correo, CORS, logs y comprobaciones de salud; probar apagado y carga.",
+    "state": "Pendiente"
+  },
+  {
+    "id": "RM-21",
+    "summary": "Implementar pagos reales",
+    "owner": "Ambos",
+    "milestone": 3,
+    "points": 8,
+    "dependencies": "RM-12, RM-20",
+    "acceptance": "Definir tarifa, moneda y proveedor; orden backend, webhook firmado e idempotencia; pruebas sandbox antes de cobrar.",
+    "state": "Pendiente"
+  },
+  {
+    "id": "RM-22",
+    "summary": "Extender operación web del conductor",
+    "owner": "Frontend",
+    "milestone": 3,
+    "points": 5,
+    "dependencies": "RM-10, RM-17",
+    "acceptance": "Portar aceptación, navegación y finalización desde Flutter al módulo web si se aprueba esa ampliación.",
+    "state": "Pendiente"
+  }
+]

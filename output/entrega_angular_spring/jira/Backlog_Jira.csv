@@ -1,0 +1,89 @@
+﻿"Issue Type","Summary","Description","Priority","Labels","Status"
+"Story","[RM-01] Estructurar el backend hexagonal","Responsable sugerido: Backend. Hito: 0. Puntos propuestos: 3.
+Dependencias: Ninguna.
+Estado local: Implementado local.
+Criterio de aceptación: Dominio y aplicación no importan Spring ni adaptadores; ArchUnit pasa.","High","hito-0","In Progress"
+"Story","[RM-02] Persistencia PostgreSQL y RLS","Responsable sugerido: Backend. Hito: 0. Puntos propuestos: 5.
+Dependencias: RM-01.
+Estado local: Implementado local.
+Criterio de aceptación: Migraciones crean perfiles, vehículos y viajes; las RPC autorizan y protegen concurrencia.","High","hito-0","In Progress"
+"Story","[RM-03] Registro con Supabase Auth","Responsable sugerido: Backend. Hito: 1. Puntos propuestos: 3.
+Dependencias: RM-01, RM-02.
+Estado local: Implementado local.
+Criterio de aceptación: Validar correo, nombre y contraseña; solo passenger/driver; respetar confirmación por correo.","High","hito-1","In Progress"
+"Story","[RM-04] Login y renovación de sesión","Responsable sugerido: Backend. Hito: 1. Puntos propuestos: 3.
+Dependencias: RM-03.
+Estado local: Implementado local.
+Criterio de aceptación: Login devuelve tokens; refresh rota la sesión; logout revoca renovación; errores no exponen secretos.","High","hito-1","In Progress"
+"Story","[RM-05] Validar JWT en Spring Security","Responsable sugerido: Backend. Hito: 1. Puntos propuestos: 5.
+Dependencias: RM-04.
+Estado local: Implementado local.
+Criterio de aceptación: Rechazar JWT sin firma válida, expirado, con issuer o audience erróneos; usar sujeto verificado.","High","hito-1","In Progress"
+"Story","[RM-06] Endpoints para el Dashboard","Responsable sugerido: Backend. Hito: 1. Puntos propuestos: 3.
+Dependencias: RM-02, RM-05.
+Estado local: Implementado local.
+Criterio de aceptación: GET perfil y viajes usan actor autenticado; POST viaje aplica reglas de negocio y RLS.","High","hito-1","In Progress"
+"Story","[RM-07] Diseñar módulos de interfaz","Responsable sugerido: Frontend. Hito: 1. Puntos propuestos: 3.
+Dependencias: RM-06.
+Estado local: Implementado local.
+Criterio de aceptación: Entregar Login, Registro, Dashboard y pago demo como SVG editables y tokens.","High","hito-1","In Progress"
+"Story","[RM-08] Login Angular","Responsable sugerido: Frontend. Hito: 1. Puntos propuestos: 3.
+Dependencias: RM-04, RM-07.
+Estado local: Implementado local.
+Criterio de aceptación: Validar formulario, mostrar carga/error, autenticar por HTTP y guardar tokens en memoria.","High","hito-1","In Progress"
+"Story","[RM-09] Registro Angular","Responsable sugerido: Frontend. Hito: 1. Puntos propuestos: 3.
+Dependencias: RM-03, RM-07.
+Estado local: Implementado local.
+Criterio de aceptación: Formulario tipado; elegir pasajero/conductor; mostrar confirmación por email si no hay sesión.","High","hito-1","In Progress"
+"Story","[RM-10] Dashboard Angular","Responsable sugerido: Frontend. Hito: 1. Puntos propuestos: 5.
+Dependencias: RM-06, RM-08.
+Estado local: Implementado local.
+Criterio de aceptación: Mostrar perfil, métricas e historial reales; filtrar; mostrar estados vacío/error/carga.","High","hito-1","In Progress"
+"Story","[RM-11] Solicitud de viaje web","Responsable sugerido: Frontend. Hito: 1. Puntos propuestos: 3.
+Dependencias: RM-10.
+Estado local: Implementado local.
+Criterio de aceptación: Enviar origen/destino; impedir solicitud duplicada desde UI; reflejar resultado y errores del backend.","High","hito-1","In Progress"
+"Story","[RM-12] Pago visual de demostración","Responsable sugerido: Frontend. Hito: 1. Puntos propuestos: 2.
+Dependencias: RM-10.
+Estado local: Implementado local.
+Criterio de aceptación: Botón para viaje completado del pasajero; diálogo anuncia demo; no pide tarjetas ni cobra.","High","hito-1","In Progress"
+"Story","[RM-13] Entornos y tipado estricto","Responsable sugerido: Ambos. Hito: 1. Puntos propuestos: 2.
+Dependencias: RM-08.
+Estado local: Implementado local.
+Criterio de aceptación: No publicar .env; generar config pública; TypeScript strict y cero any explícitos.","High","hito-1","In Progress"
+"Story","[RM-14] Colección Postman y pruebas","Responsable sugerido: Backend. Hito: 1. Puntos propuestos: 3.
+Dependencias: RM-05, RM-06.
+Estado local: Implementado local.
+Criterio de aceptación: Entorno sin secretos; pruebas de códigos HTTP; peticiones de escritura identificadas.","High","hito-1","In Progress"
+"Story","[RM-15] Documentar SOLID y 12 factores","Responsable sugerido: Ambos. Hito: 1. Puntos propuestos: 2.
+Dependencias: RM-13.
+Estado local: Implementado local.
+Criterio de aceptación: Cada principio/factor tiene evidencia y se distingue de pendientes de infraestructura.","High","hito-1","In Progress"
+"Story","[RM-16] Crear ramas locales de promoción","Responsable sugerido: Ambos. Hito: 1. Puntos propuestos: 1.
+Dependencias: RM-15.
+Estado local: Implementado local.
+Criterio de aceptación: main, preproduccion y produccion parten de una base versionada sin secretos.","High","hito-1","In Progress"
+"Story","[RM-17] Prueba integral con cuentas de aceptación","Responsable sugerido: Ambos. Hito: 2. Puntos propuestos: 3.
+Dependencias: RM-09, RM-11.
+Estado local: Pendiente.
+Criterio de aceptación: En ambiente de prueba: registro, confirmar correo, login, crear viaje, operar desde Flutter y ver historial Angular.","Medium","hito-2","To Do"
+"Story","[RM-18] Importar y organizar Jira y Figma","Responsable sugerido: Frontend. Hito: 2. Puntos propuestos: 2.
+Dependencias: RM-07, RM-15.
+Estado local: Pendiente.
+Criterio de aceptación: Importar CSV, asignar personas y sprints; importar SVG a Figma, añadir componentes y conexiones del prototipo.","Medium","hito-2","To Do"
+"Story","[RM-19] Preparar remoto y CI/CD","Responsable sugerido: Backend. Hito: 2. Puntos propuestos: 5.
+Dependencias: RM-16.
+Estado local: Pendiente.
+Criterio de aceptación: Crear remoto del equipo, proteger ramas y ejecutar pruebas y compilación en cada revisión.","Medium","hito-2","To Do"
+"Story","[RM-20] Desplegar preproducción y producción","Responsable sugerido: Backend. Hito: 2. Puntos propuestos: 5.
+Dependencias: RM-17, RM-19.
+Estado local: Pendiente.
+Criterio de aceptación: Configurar HTTPS, BD separadas, correo, CORS, logs y comprobaciones de salud; probar apagado y carga.","Medium","hito-2","To Do"
+"Story","[RM-21] Implementar pagos reales","Responsable sugerido: Ambos. Hito: 3. Puntos propuestos: 8.
+Dependencias: RM-12, RM-20.
+Estado local: Pendiente.
+Criterio de aceptación: Definir tarifa, moneda y proveedor; orden backend, webhook firmado e idempotencia; pruebas sandbox antes de cobrar.","Medium","hito-3","To Do"
+"Story","[RM-22] Extender operación web del conductor","Responsable sugerido: Frontend. Hito: 3. Puntos propuestos: 5.
+Dependencias: RM-10, RM-17.
+Estado local: Pendiente.
+Criterio de aceptación: Portar aceptación, navegación y finalización desde Flutter al módulo web si se aprueba esa ampliación.","Medium","hito-3","To Do"

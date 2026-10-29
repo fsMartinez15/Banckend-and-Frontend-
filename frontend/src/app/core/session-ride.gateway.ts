@@ -11,4 +11,5 @@ export class SessionRideGateway extends RideGateway {
   private get adapter(): RideGateway { return this.session.isDemo() ? this.demo : this.http; }
   override dashboard() { return this.adapter.dashboard(); }
   override requestTrip(request: TripRequest) { return this.adapter.requestTrip(request); }
+  override checkout(tripId: string) { return this.adapter.checkout(tripId); }
 }

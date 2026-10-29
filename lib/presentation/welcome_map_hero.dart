@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'city_map.dart';
+import 'ride_map.dart';
 import 'ride_theme.dart';
 
 class WelcomeMapHero extends StatelessWidget {
@@ -13,7 +13,7 @@ class WelcomeMapHero extends StatelessWidget {
           height: 190,
           child: Stack(
             children: [
-              const CityMap(controls: false),
+              const IgnorePointer(child: RideMap()),
               Positioned(
                 top: 16,
                 left: 16,

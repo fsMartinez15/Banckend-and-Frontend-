@@ -8,7 +8,11 @@ public interface RideUseCases {
     List<Trip> trips();
     List<Vehicle> vehicles();
     List<DriverLocation> locations();
+    List<Payment> payments();
     void createTrip(String origin, String destination);
+    void requestTrip(TripDraft draft);
+    Tariff tariff();
+    List<NearbyDriver> nearbyDrivers(double latitude, double longitude);
     void transitionTrip(String id, String status);
     void rejectTrip(String id);
     void rateTrip(String id, int stars, String comment);

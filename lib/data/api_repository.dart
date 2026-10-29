@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../domain/fare.dart';
 import '../domain/ride_repository.dart';
 
 /// Mobile outbound adapter. Auth uses Supabase; all business data uses the hexagonal API.
@@ -29,13 +30,19 @@ class ApiRepository implements RideRepository {
     String email,
     String password,
     String name,
-    String role,
-  ) async {
+    String role, {
+    String document = '',
+  }) async {
     try {
       final result = await auth.auth.signUp(
         email: email,
         password: password,
-        data: {'name': name, 'role': role},
+        data: {
+          'name': name,
+          'role': role,
+          if (document.isNotEmpty) 'document_type': 'CC',
+          if (document.isNotEmpty) 'document_number': document,
+        },
       );
       return result.session != null;
     } on AuthException catch (e) {
@@ -88,13 +95,58 @@ class ApiRepository implements RideRepository {
   @override
   Future<List<JsonRow>> locations() => list('locations');
   @override
+  Future<Tariff> tariff() async {
+    try {
+      return Tariff.fromJson(
+        Map<String, dynamic>.from(await request('GET', 'tariff')),
+      );
+    } catch (_) {
+      return Tariff.standard;
+    }
+  }
+
+  @override
+  Future<List<Coordinates>> nearbyDrivers(Coordinates around) async {
+    final rows = await request(
+      'GET',
+      'drivers/nearby?lat=${around.latitude}&lng=${around.longitude}',
+    );
+    return (rows as List)
+        .map(
+          (r) => Coordinates(
+            (r['latitude'] as num).toDouble(),
+            (r['longitude'] as num).toDouble(),
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<JsonRow>> payments() async {
+    try {
+      return await list('payments');
+    } catch (_) {
+      return [];
+    }
+  }
+
+  @override
+  Future<String> checkoutUrl(String tripId) async {
+    final link = await request('POST', 'payments/checkout', {'tripId': tripId});
+    return '${link['url']}';
+  }
+
+  @override
   Future<void> command(String name, JsonRow p) async {
     final id = Uri.encodeComponent('${p['p_id']}');
     final (method, path, body) = switch (name) {
-      'create_trip' => (
+      'create_trip' || 'request_trip' => (
         'POST',
         'trips',
-        {'origin': p['p_origin'], 'destination': p['p_destination']},
+        {
+          for (final e in p.entries)
+            if (e.value != null) e.key.replaceFirst('p_', ''): e.value,
+        },
       ),
       'transition_trip' => (
         'PUT',

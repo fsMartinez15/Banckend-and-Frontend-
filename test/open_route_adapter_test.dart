@@ -133,4 +133,35 @@ void main() {
       expect(await planner.search('Centro'), isEmpty);
     },
   );
+
+  test('Reverse geocoding names the street and caches the point', () async {
+    var calls = 0;
+    final planner = OpenRouteAdapter(
+      requestInterval: Duration.zero,
+      client: MockClient((request) async {
+        calls++;
+        expect(request.url.path, '/reverse');
+        return http.Response(
+          jsonEncode({
+            'features': [
+              {
+                'properties': {
+                  'street': 'Calle 8',
+                  'housenumber': '5-20',
+                  'district': 'Centro',
+                },
+              },
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+    expect(
+      await planner.reverse(const Coordinates(4.34, -74.36)),
+      'Calle 8 # 5-20, Centro',
+    );
+    await planner.reverse(const Coordinates(4.34, -74.36));
+    expect(calls, 1);
+  });
 }

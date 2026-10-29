@@ -28,4 +28,7 @@ class RoadRoute {
 abstract interface class RoutePlanner {
   Future<List<RoutePlace>> search(String address);
   Future<RoadRoute> route(Coordinates origin, Coordinates destination);
+
+  /// Nombre legible (calle, barrio) de un punto; null si no se encuentra.
+  Future<String?> reverse(Coordinates point);
 }

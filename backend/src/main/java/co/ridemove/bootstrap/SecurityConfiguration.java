@@ -41,6 +41,7 @@ public class SecurityConfiguration {
                     .requestMatchers(HttpMethod.OPTIONS,"/**").permitAll()
                     .requestMatchers("/health").permitAll()
                     .requestMatchers(HttpMethod.POST,"/api/auth/login","/api/auth/register","/api/auth/refresh").permitAll()
+                    .requestMatchers(HttpMethod.POST,"/api/payments/confirm","/api/payments/wompi/events").permitAll()
                     .anyRequest().authenticated())
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> {}))
                 .build();

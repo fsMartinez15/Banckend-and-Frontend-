@@ -1,17 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../domain/ride_repository.dart';
 import '../application/location_tracker.dart';
 import '../domain/external_navigation.dart';
+import '../domain/fare.dart';
+import '../domain/ride_repository.dart';
 import '../domain/route_planner.dart';
-import 'trip_navigation_screen.dart';
-import 'driver_map.dart';
-import 'city_map.dart';
+import 'driver_screen.dart';
+import 'passenger_screen.dart';
 import 'ride_theme.dart';
+import 'ride_widgets.dart';
 import 'welcome_map_hero.dart';
-import 'passenger_home.dart';
-import 'trip_request_sheet.dart';
-import 'package:latlong2/latlong.dart';
 
 class RideMoveApp extends StatelessWidget {
   final RideRepository repository;
@@ -69,26 +67,35 @@ class RideShell extends StatefulWidget {
 class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
   RideRepository get repo => widget.repository;
   JsonRow? me;
-  List<JsonRow> trips = [], users = [], vehicles = [], locations = [];
+  List<JsonRow> trips = [],
+      users = [],
+      vehicles = [],
+      locations = [],
+      payments = [];
   bool busy = false, registering = false, loading = false;
   String? loadError;
-  int tab = 0;
+  int tab = 0, ticks = 0;
   String registerRole = 'passenger';
   Timer? timer;
   int sessionEpoch = 0;
   final email = TextEditingController(),
       password = TextEditingController(),
-      name = TextEditingController();
-  final origin = TextEditingController(), destination = TextEditingController();
+      name = TextEditingController(),
+      document = TextEditingController();
+
+  bool get liveTrip =>
+      trips.any((t) => t.isActiveTrip) ||
+      (role == 'driver' && me?['available'] == true);
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    if (repo.signedIn) {
-      refresh();
-    }
-    timer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (me != null && !busy) {
+    if (repo.signedIn) refresh();
+    // Viaje activo o conductor conectado: cada 3 s. En reposo: cada 15 s.
+    timer = Timer.periodic(const Duration(seconds: 3), (_) {
+      ticks++;
+      if (me != null && !busy && (liveTrip || ticks % 5 == 0)) {
         refresh(silent: true);
       }
     });
@@ -99,7 +106,7 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.tracker?.stop();
     timer?.cancel();
-    for (final c in [email, password, name, origin, destination]) {
+    for (final c in [email, password, name, document]) {
       c.dispose();
     }
     super.dispose();
@@ -111,24 +118,36 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
       widget.tracker?.stop();
+    } else if (state == AppLifecycleState.resumed && me != null) {
+      refresh(silent: true);
     }
   }
 
+  bool get onMap =>
+      me != null && me!['active'] == true && role != 'admin' && tab == 0;
+
+  /// En el mapa los avisos aparecen arriba para no tapar los botones del panel.
   void message(String text) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-    }
+    if (!mounted) return;
+    final height = MediaQuery.sizeOf(context).height;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(text),
+          duration: const Duration(seconds: 3),
+          margin: onMap
+              ? EdgeInsets.fromLTRB(12, 0, 12, (height - 240).clamp(12, 2000))
+              : null,
+        ),
+      );
   }
 
   Future<void> refresh({bool silent = false}) async {
-    if (loading) {
-      return;
-    }
+    if (loading) return;
     loading = true;
     final epoch = sessionEpoch;
-    if (!silent && mounted) {
-      setState(() {});
-    }
+    if (!silent && mounted) setState(() {});
     try {
       final profile = await repo.profile();
       if (profile['active'] != true) {
@@ -136,10 +155,7 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
         if (mounted && epoch == sessionEpoch) {
           setState(() {
             me = profile;
-            trips = [];
-            users = [];
-            vehicles = [];
-            locations = [];
+            trips = users = vehicles = locations = payments = [];
             loadError = null;
           });
         }
@@ -150,6 +166,9 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
         repo.users(),
         repo.vehicles(),
         repo.locations(),
+        profile['role'] == 'passenger'
+            ? repo.payments()
+            : Future.value(<JsonRow>[]),
       ]);
       if (mounted && epoch == sessionEpoch && repo.signedIn) {
         setState(() {
@@ -158,46 +177,45 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
           users = data[1];
           vehicles = data[2];
           locations = data[3];
+          payments = data[4];
           loadError = null;
         });
-        if (!data[0].any(
+        final driving = data[0].any(
           (t) =>
               t['driver_id'] == profile['id'] &&
-              ['accepted', 'in_progress'].contains(t['status']),
-        )) {
+              assignedStatuses.contains(t['status']),
+        );
+        if (profile['role'] == 'driver' &&
+            profile['available'] != true &&
+            !driving) {
           await widget.tracker?.stop();
         }
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && !silent) {
         setState(() {
-          loadError =
-              'No pudimos actualizar los datos. Revisa tu conexión y la migración de Supabase.';
+          loadError = 'No pudimos actualizar los datos. Revisa tu conexión.';
         });
       }
     } finally {
       loading = false;
-      if (mounted) {
-        setState(() {});
-      }
+      if (mounted) setState(() {});
     }
   }
 
-  Future<void> act(Future<void> Function() action, {String? success}) async {
-    if (busy) {
-      return;
-    }
-    setState(() {
-      busy = true;
-    });
+  /// Ejecuta una acción, refresca y muestra el resultado. Devuelve si tuvo éxito.
+  Future<bool> act(Future<void> Function() action, {String? success}) async {
+    if (busy) return false;
+    setState(() => busy = true);
+    var ok = false;
     try {
       await action();
+      ok = true;
       if (repo.signedIn) {
-        await refresh();
+        busy = false;
+        await refresh(silent: true);
       }
-      if (success != null) {
-        message(success);
-      }
+      if (success != null) message(success);
     } on AppFailure catch (e) {
       message(e.message);
     } catch (e) {
@@ -207,16 +225,13 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
             : 'No se pudo completar la acción. Revisa tu conexión e inténtalo de nuevo.',
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          busy = false;
-        });
-      }
+      if (mounted) setState(() => busy = false);
     }
+    return ok;
   }
 
-  Future<void> command(String name, JsonRow params) =>
-      act(() => repo.command(name, params));
+  Future<void> command(String name, JsonRow params, {String? success}) =>
+      act(() => repo.command(name, params), success: success);
   String get role => me?['role'] ?? 'passenger';
   String person(dynamic id) =>
       users
@@ -224,6 +239,7 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
           .map((u) => '${u['name']}')
           .firstOrNull ??
       'Por asignar';
+
   Widget heading(String text, [String? sub]) => Padding(
     padding: const EdgeInsets.only(top: 24, bottom: 16),
     child: Column(
@@ -245,13 +261,6 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
       color: color,
       borderRadius: BorderRadius.circular(24),
       border: Border.all(color: const Color(0xFFE5EAF5)),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x0515233D),
-          blurRadius: 16,
-          offset: Offset(0, 5),
-        ),
-      ],
     ),
     child: Material(type: MaterialType.transparency, child: child),
   );
@@ -260,13 +269,17 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
     String label, {
     bool secret = false,
     TextInputType? keyboard,
+    IconData? icon,
   }) => Padding(
     padding: const EdgeInsets.only(bottom: 14),
     child: TextField(
       controller: controller,
       obscureText: secret,
       keyboardType: keyboard,
-      decoration: InputDecoration(labelText: label),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: icon == null ? null : Icon(icon, size: 20),
+      ),
     ),
   );
   Widget button(
@@ -283,35 +296,42 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final logged = me != null;
     final mapHome =
-        logged && me!['active'] == true && role == 'passenger' && tab == 0;
+        logged && me!['active'] == true && role != 'admin' && tab == 0;
     return Scaffold(
-      appBar: AppBar(
-        title: const FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: RideBrand(),
-        ),
-        toolbarHeight: 70,
-        actions: [
-          if (repo.demo)
-            const Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: Chip(
-                label: Text(
-                  'DEMO',
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-                ),
-                backgroundColor: mist,
+      appBar: mapHome
+          ? null
+          : AppBar(
+              title: const FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: RideBrand(),
               ),
+              toolbarHeight: 70,
+              actions: [
+                if (repo.demo)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 16),
+                    child: Chip(
+                      label: Text(
+                        'DEMO',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      backgroundColor: mist,
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            if (busy || loading) const LinearProgressIndicator(minHeight: 2),
-            if (loadError != null)
-              MaterialBanner(
+      body: Column(
+        children: [
+          if (!mapHome && (busy || loading))
+            const LinearProgressIndicator(minHeight: 2),
+          if (loadError != null)
+            SafeArea(
+              bottom: false,
+              child: MaterialBanner(
                 content: Text(loadError!),
                 actions: [
                   TextButton(
@@ -322,18 +342,18 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
                     TextButton(
                       onPressed: () async {
                         await repo.signOut();
-                        setState(() {
-                          loadError = null;
-                        });
+                        setState(() => loadError = null);
                       },
                       child: const Text('Volver'),
                     ),
                 ],
               ),
-            Expanded(
-              child: mapHome
-                  ? passengerMapHome()
-                  : Center(
+            ),
+          Expanded(
+            child: mapHome
+                ? (role == 'driver' ? driverHome() : passengerHome())
+                : SafeArea(
+                    child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 680),
                         child: RefreshIndicator(
@@ -354,44 +374,51 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
                                 ? profile()
                                 : tab == 1
                                 ? history()
-                                : home(),
+                                : adminHome(),
                           ),
                         ),
                       ),
                     ),
-            ),
-          ],
-        ),
+                  ),
+          ),
+        ],
       ),
       bottomNavigationBar: logged
           ? NavigationBar(
+              height: 64,
               selectedIndex: tab,
-              onDestinationSelected: (v) => setState(() {
-                tab = v;
-              }),
+              onDestinationSelected: (v) => setState(() => tab = v),
               destinations: [
                 NavigationDestination(
                   icon: Icon(
                     role == 'admin'
                         ? Icons.space_dashboard_outlined
-                        : Icons.explore_outlined,
+                        : role == 'driver'
+                        ? Icons.directions_car_outlined
+                        : Icons.near_me_outlined,
                   ),
                   selectedIcon: Icon(
                     role == 'admin'
                         ? Icons.space_dashboard_rounded
-                        : Icons.explore_rounded,
+                        : role == 'driver'
+                        ? Icons.directions_car_rounded
+                        : Icons.near_me_rounded,
                   ),
-                  label: role == 'admin' ? 'Panel' : 'Inicio',
+                  label: role == 'admin'
+                      ? 'Panel'
+                      : role == 'driver'
+                      ? 'Conducir'
+                      : 'Viajar',
                 ),
                 const NavigationDestination(
-                  icon: Icon(Icons.receipt_long_rounded),
-                  selectedIcon: Icon(Icons.receipt_long),
+                  icon: Icon(Icons.receipt_long_outlined),
+                  selectedIcon: Icon(Icons.receipt_long_rounded),
                   label: 'Viajes',
                 ),
                 const NavigationDestination(
                   icon: Icon(Icons.person_outline_rounded),
                   selectedIcon: Icon(Icons.person_rounded),
-                  label: 'Mi perfil',
+                  label: 'Cuenta',
                 ),
               ],
             )
@@ -399,56 +426,39 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
     );
   }
 
-  Widget passengerMapHome() {
-    final active = trips
-        .where((r) => ['accepted', 'in_progress'].contains(r['status']))
-        .firstOrNull;
-    final position = active == null
-        ? null
-        : locations
-              .where((p) => p['driver_id'] == active['driver_id'])
-              .firstOrNull;
-    return PassengerHome(
-      name: me!['name'].toString().split(' ').first,
-      driver: position == null
-          ? null
-          : LatLng(
-              (position['latitude'] as num).toDouble(),
-              (position['longitude'] as num).toDouble(),
-            ),
-      onRequest: busy ? null : requestTrip,
-      onDestination: (place) {
-        destination.text = place;
-        requestTrip();
-      },
-      activeTrips: activeTrips(),
-    );
-  }
+  Widget passengerHome() => PassengerScreen(
+    repository: repo,
+    planner: widget.routePlanner,
+    device: widget.tracker?.device,
+    navigation: widget.navigation,
+    me: me!,
+    trips: trips,
+    users: users,
+    vehicles: vehicles,
+    locations: locations,
+    payments: payments,
+    busy: busy,
+    run: act,
+    notify: message,
+  );
 
-  Future<void> requestTrip() async {
-    final confirmed = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Colors.white,
-      useSafeArea: true,
-      builder: (_) =>
-          TripRequestSheet(origin: origin, destination: destination),
-    );
-    if (confirmed != true || !mounted) return;
-    await act(
-      () async {
-        await repo.command('create_trip', {
-          'p_origin': origin.text.trim(),
-          'p_destination': destination.text.trim(),
-        });
-        origin.clear();
-        destination.clear();
-      },
-      success:
-          'Solicitud creada. Te avisaremos aquí cuando un conductor la acepte.',
-    );
-  }
+  Widget driverHome() => DriverScreen(
+    repository: repo,
+    planner: widget.routePlanner,
+    tracker: widget.tracker,
+    navigation: widget.navigation,
+    me: me!,
+    trips: trips,
+    users: users,
+    vehicles: vehicles,
+    locations: locations,
+    busy: busy,
+    run: act,
+    notify: message,
+    onEditVehicle: editVehicle,
+  );
+
+  String cedula() => document.text.replaceAll(RegExp(r'[^0-9]'), '');
 
   List<Widget> auth() => [
     const WelcomeMapHero(),
@@ -459,7 +469,9 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
           ? 'Crea tu cuenta'
           : 'Qué bueno verte',
       repo.demo
-          ? 'Prueba el flujo con datos de ejemplo. Los cambios se conservan solo durante esta sesión.'
+          ? 'Prueba el viaje completo: pide un servicio y mira cómo el conductor llega, te recoge y te lleva.'
+          : registering
+          ? 'Regístrate con tu cédula en menos de un minuto.'
           : 'Tu próximo destino empieza aquí.',
     ),
     if (repo.demo)
@@ -484,31 +496,55 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
         ),
       )
     else ...[
-      if (registering) field(name, 'Nombre completo'),
-      field(email, 'Correo electrónico', keyboard: TextInputType.emailAddress),
-      field(password, 'Contraseña', secret: true),
-      if (registering)
+      if (registering) ...[
         Padding(
           padding: const EdgeInsets.only(bottom: 16),
           child: SegmentedButton<String>(
             segments: const [
-              ButtonSegment(value: 'passenger', label: Text('Pasajero')),
-              ButtonSegment(value: 'driver', label: Text('Conductor')),
+              ButtonSegment(
+                value: 'passenger',
+                label: Text('Quiero viajar'),
+                icon: Icon(Icons.person_outline),
+              ),
+              ButtonSegment(
+                value: 'driver',
+                label: Text('Quiero conducir'),
+                icon: Icon(Icons.directions_car_outlined),
+              ),
             ],
             selected: {registerRole},
-            onSelectionChanged: (s) => setState(() {
-              registerRole = s.first;
-            }),
+            onSelectionChanged: (s) => setState(() => registerRole = s.first),
           ),
         ),
+        field(name, 'Nombre completo', icon: Icons.badge_outlined),
+        field(
+          document,
+          registerRole == 'passenger'
+              ? 'Número de cédula'
+              : 'Número de cédula (opcional)',
+          keyboard: TextInputType.number,
+          icon: Icons.credit_card_outlined,
+        ),
+      ],
+      field(
+        email,
+        'Correo electrónico',
+        keyboard: TextInputType.emailAddress,
+        icon: Icons.mail_outline,
+      ),
+      field(password, 'Contraseña', secret: true, icon: Icons.lock_outline),
       button(registering ? 'Crear cuenta' : 'Iniciar sesión', () {
         if (!RegExp(
               r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
             ).hasMatch(email.text.trim()) ||
             password.text.length < 8 ||
-            (registering && name.text.trim().length < 2)) {
+            (registering && name.text.trim().length < 2) ||
+            (registering && registerRole == 'passenger' && cedula().isEmpty) ||
+            (registering &&
+                cedula().isNotEmpty &&
+                !RegExp(r'^\d{5,10}$').hasMatch(cedula()))) {
           message(
-            'Escribe un correo válido, una contraseña de al menos 8 caracteres y tu nombre.',
+            'Escribe un correo válido, una contraseña de al menos 8 caracteres, tu nombre y, si vas a viajar, tu cédula (5 a 10 dígitos).',
           );
           return;
         }
@@ -519,14 +555,13 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
               password.text,
               name.text.trim(),
               registerRole,
+              document: cedula(),
             );
             if (!ready) {
               message(
                 'Revisa tu correo para confirmar la cuenta y luego inicia sesión.',
               );
-              setState(() {
-                registering = false;
-              });
+              setState(() => registering = false);
             }
           } else {
             await repo.signIn(email.text.trim(), password.text);
@@ -534,99 +569,47 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
         });
       }),
       TextButton(
-        onPressed: () => setState(() {
-          registering = !registering;
-        }),
+        onPressed: () => setState(() => registering = !registering),
         child: Text(
           registering ? 'Ya tengo una cuenta' : 'Soy nuevo, crear cuenta',
         ),
       ),
     ],
   ];
-  List<Widget> home() => [
-    Text(
-      'FUSAGASUGÁ  •  ${roleLabels[role]?.toUpperCase()}',
-      style: const TextStyle(
-        color: electric,
-        fontWeight: FontWeight.bold,
-        fontSize: 11,
-        letterSpacing: 1.5,
-      ),
-    ),
-    heading(
-      'Hola, ${me!['name'].toString().split(' ').first} 👋',
-      role == 'passenger'
-          ? '¿A dónde vamos hoy?'
-          : role == 'driver'
-          ? 'Conecta con tu ciudad, un viaje a la vez.'
-          : 'Así se mueve nuestra comunidad.',
-    ),
-    if (role == 'driver') ...[
-      ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: const SizedBox(height: 220, child: CityMap(controls: false)),
-      ),
-      const SizedBox(height: 16),
-      panel(
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            me!['available'] == true
-                ? 'Estás disponible'
-                : 'Estás desconectado',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: const Text('Recibe solicitudes cuando quieras conducir'),
-          value: me!['available'] == true,
-          onChanged: busy
-              ? null
-              : (v) => command('set_availability', {'p_available': v}),
-        ),
-        color: mist,
-      ),
-      button(
-        'Activar ubicación durante el viaje',
-        shareLocation,
-        icon: Icons.my_location,
-      ),
-      TextButton(
-        onPressed: () async {
-          await widget.tracker?.stop();
-          message('Ubicación detenida.');
-        },
-        child: const Text('Detener ubicación'),
-      ),
-      const SizedBox(height: 8),
-      const Text(
-        'Con un viaje activo se actualiza al desplazarte, mientras la app está abierta. Al salir de la app se detiene; vuelve a activarla al regresar.',
-        style: TextStyle(fontSize: 12, color: muted),
-      ),
-      heading('Tu viaje actual'),
-      ...activeTrips(),
+
+  List<Widget> adminHome() {
+    final done = trips.where((t) => t.tripStatus == 'completed');
+    final revenue = done.fold(0, (s, t) => s + (t.fareCents ?? 0));
+    return [
       heading(
-        'Solicitudes en tu ciudad',
-        'Solicitudes de Fusagasugá, sin ordenar por distancia.',
+        'Hola, ${'${me!['name']}'.split(' ').first} 👋',
+        'Así se mueve nuestra comunidad.',
       ),
-      if (me!['available'] == true)
-        ...trips.where((r) => r['status'] == 'pending').map(tripCard)
-      else
-        panel(const Text('Activa tu disponibilidad para aceptar un viaje.')),
-    ],
-    if (role == 'admin') ...[
       panel(
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+        Wrap(
+          alignment: WrapAlignment.spaceAround,
+          runSpacing: 16,
           children: [
             metric('${users.length}', 'Usuarios'),
-            metric('${trips.length}', 'Viajes'),
-            metric(
-              '${trips.where((r) => r['status'] == 'completed').length}',
-              'Finalizados',
-            ),
+            metric('${trips.where((t) => t.isActiveTrip).length}', 'Activos'),
+            metric('${done.length}', 'Finalizados'),
+            metric(formatCop(revenue), 'Facturado'),
           ],
         ),
         color: mist,
       ),
+      heading('Viajes en curso'),
+      if (!trips.any((t) => t.isActiveTrip))
+        panel(const Text('No hay viajes en curso ahora.')),
+      ...trips
+          .where((t) => t.isActiveTrip)
+          .map(
+            (t) => TripHistoryCard(
+              trip: t,
+              counterpart:
+                  '${person(t['passenger_id'])} → ${t['driver_id'] == null ? 'sin conductor' : person(t['driver_id'])}',
+            ),
+          ),
       heading('Comunidad'),
       ...users.map(
         (u) => panel(
@@ -638,7 +621,9 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               Text(
-                '${roleLabels[u['role']]} · ${u['active'] == true ? 'Activo' : 'Suspendido'}',
+                '${roleLabels[u['role']]} · ${u['active'] == true ? 'Activo' : 'Suspendido'}'
+                '${u['role'] == 'driver' ? ' · ${u['available'] == true ? 'Conectado' : 'Desconectado'}' : ''}'
+                '${u['rating_avg'] != null ? ' · ★ ${u['rating_avg']}' : ''}',
               ),
               if (u['id'] != me!['id'] && u['role'] != 'admin')
                 TextButton(
@@ -675,255 +660,186 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
           ),
         ),
       ),
-    ],
-  ];
-  Widget metric(String value, String label) => Expanded(
+    ];
+  }
+
+  Widget metric(String value, String label) => SizedBox(
+    width: 130,
     child: Column(
       children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 30,
-            fontWeight: FontWeight.w800,
-            color: ink,
+        FittedBox(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              color: ink,
+            ),
           ),
         ),
         Text(label, textAlign: TextAlign.center),
       ],
     ),
   );
-  List<Widget> activeTrips() {
-    final active = trips
-        .where(
-          (r) =>
-              !['completed', 'cancelled'].contains(r['status']) &&
-              (role != 'driver' || r['driver_id'] == me!['id']),
-        )
-        .toList();
-    return active.isEmpty
-        ? [
-            panel(
-              const Row(
-                children: [
-                  Icon(Icons.wb_sunny_outlined, color: electric),
-                  SizedBox(width: 14),
-                  Expanded(child: Text('Todo listo para tu próximo viaje.')),
-                ],
-              ),
-            ),
-          ]
-        : active.map(tripCard).toList();
-  }
 
-  List<Widget> history() => [
-    heading(
-      role == 'admin' ? 'Todos los servicios' : 'Mis viajes',
-      'Consulta el estado y el historial de tus servicios.',
-    ),
-    if (trips.isEmpty) panel(const Text('Aún no hay viajes registrados.')),
-    ...trips.map(tripCard),
-  ];
-  Widget tripCard(JsonRow r) {
-    final s = r['status'];
-    final car = vehicles
-        .where((v) => v['driver_id'] == r['driver_id'])
-        .firstOrNull;
-    final position = locations
-        .where((v) => v['driver_id'] == r['driver_id'])
-        .firstOrNull;
-    return panel(
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  statusLabels[s] ?? s,
-                  style: const TextStyle(
-                    color: electric,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              if (r['rating'] != null)
-                Text(
-                  '★ ${r['rating']}',
-                  style: const TextStyle(color: electric),
-                ),
-            ],
+  List<Widget> history() {
+    final mine = role == 'admin'
+        ? trips
+        : trips
+              .where(
+                (t) =>
+                    t['passenger_id'] == me!['id'] ||
+                    t['driver_id'] == me!['id'],
+              )
+              .toList();
+    final spent = mine
+        .where((t) => t.tripStatus == 'completed')
+        .fold(0, (s, t) => s + (t.fareCents ?? 0));
+    return [
+      heading(
+        role == 'admin' ? 'Todos los servicios' : 'Mis viajes',
+        role == 'driver'
+            ? 'Ganancias acumuladas: ${formatCop(spent)}'
+            : role == 'passenger'
+            ? 'Total en viajes: ${formatCop(spent)}'
+            : 'Historial de todos los servicios.',
+      ),
+      if (mine.isEmpty) panel(const Text('Aún no hay viajes registrados.')),
+      ...mine.map(
+        (t) => TripHistoryCard(
+          trip: t,
+          paid: payments.any(
+            (p) => p['trip_id'] == t['id'] && p['status'] == 'APPROVED',
           ),
-          const SizedBox(height: 16),
-          routeLine(Icons.radio_button_checked, '${r['origin']}'),
-          const Padding(
-            padding: EdgeInsets.only(left: 10),
-            child: Text('│', style: TextStyle(color: Colors.grey)),
-          ),
-          routeLine(Icons.location_on, '${r['destination']}'),
-          const SizedBox(height: 12),
-          Text(
-            'Solicitud: ${r['created_at'].toString().substring(0, 10)}',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-          if (r['driver_id'] != null) ...[
-            const Divider(height: 28),
-            Text('Conductor: ${person(r['driver_id'])}'),
-            if (car != null)
-              Text('${car['brand']} · ${car['color']} · ${car['plate']}'),
-            if (position != null && ['accepted', 'in_progress'].contains(s))
-              Text(
-                'Última ubicación: ${position['latitude']}, ${position['longitude']}\nActualizada: ${position['updated_at']}',
-                style: const TextStyle(fontSize: 12),
+          counterpart: role == 'passenger'
+              ? (t['driver_id'] == null
+                    ? null
+                    : 'Conductor: ${person(t['driver_id'])}')
+              : role == 'driver'
+              ? 'Pasajero: ${person(t['passenger_id'])}'
+              : null,
+          actions: [
+            if (t.isActiveTrip && role != 'admin')
+              FilledButton.tonal(
+                onPressed: () => setState(() => tab = 0),
+                child: const Text('Ver en el mapa'),
               ),
           ],
-          if (position != null && ['accepted', 'in_progress'].contains(s))
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: DriverMap(
-                latitude: (position['latitude'] as num).toDouble(),
-                longitude: (position['longitude'] as num).toDouble(),
-              ),
-            ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (role == 'passenger' && s == 'pending')
-                OutlinedButton(
-                  onPressed: busy
-                      ? null
-                      : () => command('transition_trip', {
-                          'p_id': r['id'],
-                          'p_status': 'cancelled',
-                        }),
-                  child: const Text('Cancelar solicitud'),
-                ),
-              if (role == 'driver' &&
-                  s == 'pending' &&
-                  me!['available'] == true) ...[
-                button(
-                  'Aceptar',
-                  () => command('transition_trip', {
-                    'p_id': r['id'],
-                    'p_status': 'accepted',
-                  }),
-                  icon: Icons.check,
-                ),
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () => command('reject_trip', {'p_id': r['id']}),
-                  child: const Text('Rechazar'),
-                ),
-              ],
-              if (role == 'driver' &&
-                  r['driver_id'] == me!['id'] &&
-                  s == 'accepted')
-                button('Iniciar viaje', () => startTrip(r)),
-              if (role == 'driver' &&
-                  r['driver_id'] == me!['id'] &&
-                  s == 'in_progress')
-                button(
-                  'Abrir navegación',
-                  () => openNavigation(r),
-                  icon: Icons.navigation_rounded,
-                ),
-              if (role == 'driver' &&
-                  r['driver_id'] == me!['id'] &&
-                  s == 'in_progress')
-                button(
-                  'Finalizar viaje',
-                  () => command('transition_trip', {
-                    'p_id': r['id'],
-                    'p_status': 'completed',
-                  }),
-                  icon: Icons.flag_outlined,
-                ),
-              if (role == 'passenger' &&
-                  s == 'completed' &&
-                  r['rating'] == null)
-                button(
-                  'Calificar viaje',
-                  () => rate(r),
-                  icon: Icons.star_outline,
-                ),
-            ],
-          ),
-        ],
+        ),
       ),
-    );
+    ];
   }
 
-  Widget routeLine(IconData icon, String text) => Row(
-    children: [
-      Icon(icon, size: 21, color: electric),
-      const SizedBox(width: 12),
-      Expanded(
-        child: Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
+  List<Widget> profile() {
+    final car = vehicles.where((v) => v['driver_id'] == me!['id']).firstOrNull;
+    return [
+      heading('Mi cuenta', '${roleLabels[role]} en RideMove'),
+      panel(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: mist,
+                  child: Text(
+                    '${me!['name']}'.substring(0, 1).toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 24,
+                      color: ink,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${me!['name']}',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      Text(
+                        [
+                          if ('${me!['phone'] ?? ''}'.isNotEmpty)
+                            '${me!['phone']}',
+                          if (me!['document_number'] != null)
+                            '${me!['document_type'] ?? 'CC'} ${me!['document_number']}',
+                          if (me!['rating_avg'] != null)
+                            '★ ${me!['rating_avg']} (${me!['rating_count']})',
+                        ].join(' · '),
+                        style: const TextStyle(color: muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: busy ? null : editProfile,
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Editar información'),
+            ),
+          ],
+        ),
       ),
-    ],
-  );
-  List<Widget> profile() => [
-    heading('Mi perfil', '${roleLabels[role]} en RideMove'),
-    panel(
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: mist,
-            child: Text(
-              me!['name'].toString().substring(0, 1).toUpperCase(),
-              style: const TextStyle(fontSize: 24, color: ink),
+      if (role == 'driver') ...[
+        heading('Mi vehículo'),
+        if (car != null)
+          panel(
+            Row(
+              children: [
+                const Icon(
+                  Icons.directions_car_filled_rounded,
+                  size: 34,
+                  color: ink,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    '${car['brand']} ${car['model']} · ${car['color']}\nPlaca ${car['plate']} · Licencia ${car['license']}',
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          Text('${me!['name']}', style: Theme.of(context).textTheme.titleLarge),
-          Text('${me!['phone'] ?? ''}'),
-          const SizedBox(height: 16),
-          button('Editar información', editProfile, icon: Icons.edit_outlined),
-        ],
-      ),
-    ),
-    if (role == 'driver') ...[
-      heading('Mi vehículo'),
-      if (vehicles.where((v) => v['driver_id'] == me!['id']).firstOrNull
-          case final JsonRow v)
-        panel(
-          Text(
-            '${v['brand']} ${v['model']} · ${v['color']}\nPlaca: ${v['plate']}\nLicencia: ${v['license']}',
-          ),
+        button(
+          car == null ? 'Registrar vehículo' : 'Editar vehículo',
+          editVehicle,
+          icon: Icons.directions_car_outlined,
         ),
-      button(
-        'Registrar o editar vehículo',
-        editVehicle,
-        icon: Icons.directions_car_outlined,
+      ],
+      const SizedBox(height: 24),
+      if (repo.demo)
+        const Text(
+          'Modo demostración · Datos temporales. Cierra sesión para entrar con otro rol.',
+          style: TextStyle(color: muted),
+        ),
+      const SizedBox(height: 12),
+      OutlinedButton.icon(
+        onPressed: busy ? null : logout,
+        icon: const Icon(Icons.logout),
+        label: const Text('Cerrar sesión'),
       ),
-    ],
-    const SizedBox(height: 24),
-    if (repo.demo)
-      const Text(
-        'Modo demostración · Datos temporales. Puedes cambiar de rol cerrando sesión para completar un viaje.',
-      ),
-    const SizedBox(height: 12),
-    OutlinedButton.icon(
-      onPressed: busy ? null : logout,
-      icon: const Icon(Icons.logout),
-      label: const Text('Cerrar sesión'),
-    ),
-  ];
+    ];
+  }
+
   Future<void> logout() async {
     await act(() async {
       sessionEpoch++;
       await widget.tracker?.stop();
+      if (role == 'driver' && me?['available'] == true) {
+        try {
+          await repo.command('set_availability', {'p_available': false});
+        } catch (_) {}
+      }
       await repo.signOut();
       setState(() {
         me = null;
-        trips = [];
-        users = [];
-        vehicles = [];
-        locations = [];
+        trips = users = vehicles = locations = payments = [];
         tab = 0;
         password.clear();
         loadError = null;
@@ -935,7 +851,7 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
     await editForm(
       'Editar perfil',
       {'name': '${me!['name']}', 'phone': '${me!['phone'] ?? ''}'},
-      {'name': 'Nombre completo', 'phone': 'Teléfono'},
+      {'name': 'Nombre completo', 'phone': 'Celular'},
       (values) => repo.command('save_profile', {
         'p_name': values['name'],
         'p_phone': values['phone'],
@@ -956,7 +872,7 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
       },
       {
         'plate': 'Placa',
-        'brand': 'Marca',
+        'brand': 'Marca y línea',
         'model': 'Modelo / año',
         'color': 'Color',
         'license': 'Licencia de conducción',
@@ -1010,113 +926,13 @@ class _RideShellState extends State<RideShell> with WidgetsBindingObserver {
         ],
       ),
     );
-    // Let the dialog finish its closing animation before disposing its controllers.
+    // Deja terminar la animación del diálogo antes de liberar los controladores.
     await Future<void>.delayed(const Duration(milliseconds: 300));
     for (final c in controllers.values) {
       c.dispose();
     }
     if (result != null && mounted) {
-      await act(() => save(result));
+      await act(() => save(result), success: 'Guardado.');
     }
-  }
-
-  Future<void> rate(JsonRow trip) async {
-    int stars = 5;
-    final comment = TextEditingController();
-    final result = await showDialog<JsonRow>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, update) => AlertDialog(
-          title: const Text('¿Cómo estuvo tu viaje?'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Wrap(
-                children: List.generate(
-                  5,
-                  (i) => IconButton(
-                    tooltip: '${i + 1} estrellas',
-                    onPressed: () => update(() {
-                      stars = i + 1;
-                    }),
-                    icon: Icon(
-                      i < stars ? Icons.star : Icons.star_outline,
-                      color: electric,
-                    ),
-                  ),
-                ),
-              ),
-              TextField(
-                controller: comment,
-                maxLength: 255,
-                decoration: const InputDecoration(
-                  labelText: 'Comentario (opcional)',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Después'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, {
-                'p_id': trip['id'],
-                'p_rating': stars,
-                'p_comment': comment.text.trim(),
-              }),
-              child: const Text('Enviar'),
-            ),
-          ],
-        ),
-      ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    comment.dispose();
-    if (result != null && mounted) {
-      await command('rate_trip', result);
-    }
-  }
-
-  Future<void> shareLocation() => act(() async {
-    if (!trips.any(
-      (t) =>
-          t['driver_id'] == me!['id'] &&
-          ['accepted', 'in_progress'].contains(t['status']),
-    )) {
-      throw StateError('Acepta un viaje antes de compartir tu ubicación.');
-    }
-    if (widget.tracker == null) {
-      throw StateError('Ubicación no disponible en esta sesión.');
-    }
-    await widget.tracker!.start(onError: message);
-  }, success: 'Ubicación activada para el viaje actual.');
-
-  Future<void> startTrip(JsonRow trip) async {
-    bool started = false;
-    await act(() async {
-      await repo.command('transition_trip', {
-        'p_id': trip['id'],
-        'p_status': 'in_progress',
-      });
-      started = true;
-    });
-    if (started && mounted) await openNavigation(trip);
-  }
-
-  Future<void> openNavigation(JsonRow trip) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => TripNavigationScreen(
-          trip: trip,
-          repository: repo,
-          tracker: widget.tracker,
-          navigation: widget.navigation,
-          routePlanner: widget.routePlanner,
-        ),
-      ),
-    );
-    if (mounted) await refresh();
   }
 }

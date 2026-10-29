@@ -16,9 +16,9 @@ describe('HTTP authentication boundary', () => {
     TestBed.configureTestingModule({ providers: [provideHttpClient(withInterceptors([authInterceptor])), provideHttpClientTesting(), provideRouter([]), { provide: APP_CONFIG, useValue: { apiBaseUrl: base, demoEnabled: true } }, { provide: AuthGateway, useClass: HttpAuthGateway }, SessionRideGateway] });
     http = TestBed.inject(HttpTestingController); session = TestBed.inject(SessionService);
   });
-  afterEach(() => http.verify());
+  afterEach(() => { http.verify(); sessionStorage.clear(); });
   function login(): Promise<void> {
-    const promise = firstValueFrom(session.login({ email: 'test@example.org', password: 'test-password' }));
+    const promise = firstValueFrom(session.login({ identifier: 'test@example.org', password: 'test-password' }));
     const req = http.expectOne(`${base}/api/auth/login`);
     expect(req.request.headers.has('Authorization')).toBe(false);
     req.flush({ access_token: 'initial-token', refresh_token: 'refresh-token', expires_in: 3600, token_type: 'bearer', user: { id: 'user-1', email: 'test@example.org' } });
@@ -41,7 +41,7 @@ describe('HTTP authentication boundary', () => {
     expect(await result).toEqual({ id: 'user-1' });
   });
   it('keeps email confirmation separate from an authenticated session', async () => {
-    const result = firstValueFrom(session.register({ name: 'Example User', email: 'test@example.org', password: 'test-password', role: 'passenger' }));
+    const result = firstValueFrom(session.register({ name: 'Example User', email: 'test@example.org', password: 'test-password', role: 'passenger', documentType: 'CC', documentNumber: '1069700001', phone: '3001234567' }));
     http.expectOne(`${base}/api/auth/register`).flush({ access_token: null, refresh_token: null, user: null });
     expect(await result).toBe(false); expect(session.authenticated()).toBe(false);
   });
@@ -51,6 +51,7 @@ describe('HTTP authentication boundary', () => {
     await login(); const result = firstValueFrom(rides.dashboard());
     http.expectOne(`${base}/api/profile`).flush({ id: 'real-user', name: 'Real User', role: 'passenger', active: true, available: false, phone: null });
     http.expectOne(`${base}/api/trips`).flush([]);
+    http.expectOne(`${base}/api/payments`).flush([]);
     expect((await result).profile.id).toBe('real-user'); expect(session.isDemo()).toBe(false);
   });
   it('clears local tokens even if the logout service is unavailable', async () => {
@@ -58,6 +59,23 @@ describe('HTTP authentication boundary', () => {
     const assertion = expect(result).rejects.toBeDefined();
     http.expectOne(`${base}/api/auth/logout`).flush({}, { status: 503, statusText: 'Unavailable' });
     await assertion; expect(session.token()).toBeNull(); expect(session.authenticated()).toBe(false);
+  });
+  it('sends the cédula as login identifier', async () => {
+    const result = firstValueFrom(session.login({ identifier: '1069700001', password: 'secret-pass' }));
+    const req = http.expectOne(`${base}/api/auth/login`); expect(req.request.body).toEqual({ identifier: '1069700001', password: 'secret-pass' });
+    req.flush({ access_token: 'tok', refresh_token: 'ref', expires_in: 3600, token_type: 'bearer', user: { id: 'u', email: 'c@x.co' } });
+    await result; expect(session.authenticated()).toBe(true);
+    expect(JSON.parse(sessionStorage.getItem('ridemove.session') ?? '{}').access_token).toBe('tok');
+    const out = firstValueFrom(session.logout(), { defaultValue: undefined }); http.expectOne(`${base}/api/auth/logout`).flush(null, { status: 204, statusText: 'No Content' }); await out;
+    expect(sessionStorage.getItem('ridemove.session')).toBeNull();
+  });
+  it('requests a signed Wompi checkout from the backend', async () => {
+    await login();
+    const result = firstValueFrom(TestBed.inject(SessionRideGateway).checkout('trip-1'));
+    const req = http.expectOne(`${base}/api/payments/checkout`); expect(req.request.body).toEqual({ tripId: 'trip-1' });
+    expect(req.request.headers.get('Authorization')).toBe('Bearer initial-token');
+    req.flush({ url: 'https://checkout.wompi.co/p/?x=1', reference: 'RM-1', amount_in_cents: 800000, currency: 'COP' });
+    expect((await result).amount_in_cents).toBe(800000);
   });
   it('accepts the create-trip contract: HTTP 201 with no response body', async () => {
     await login();

@@ -16,7 +16,7 @@ Future<void> main() async {
   const url = String.fromEnvironment('SUPABASE_URL');
   const key = String.fromEnvironment('SUPABASE_ANON_KEY');
   const api = String.fromEnvironment('API_BASE_URL');
-  RideRepository repository = DemoRepository();
+  RideRepository repository = DemoRepository(autopilot: true);
   String? error;
   if (url.isNotEmpty || key.isNotEmpty) {
     try {

@@ -7,11 +7,11 @@ import { SessionService } from '../core/session.service';
 import { RideGateway } from '../core/ride.gateway';
 import { DashboardData, ROLE_LABEL, Trip, TripRequest } from '../core/models';
 import { errorMessage } from '../core/api-error';
-import { PaymentDemoComponent } from './payment-demo.component';
+import { PaymentComponent } from './payment.component';
 import { TripListComponent } from './trip-list.component';
 import { TripRequestComponent } from './trip-request.component';
 type Filter = 'all' | 'active' | 'completed';
-@Component({ selector: 'app-dashboard', imports: [RouterLink, BrandComponent, MapArtComponent, PaymentDemoComponent, TripListComponent, TripRequestComponent], template: `
+@Component({ selector: 'app-dashboard', imports: [RouterLink, BrandComponent, MapArtComponent, PaymentComponent, TripListComponent, TripRequestComponent], template: `
   <div class="workspace"><aside class="sidebar"><app-brand/><div class="side-label">MI ESPACIO</div><nav aria-label="Navegación principal"><a routerLink="/dashboard" fragment="overview" class="nav-item selected"><span>▦</span> Mi dashboard <i></i></a><a routerLink="/dashboard" fragment="trips" class="nav-item"><span>↗</span> Mis viajes</a></nav><div class="side-bottom"><div class="mini-card"><span>EL CAMINO ES MEJOR JUNTOS</span><strong>Muévete a tu manera.</strong><p>Un destino. Muchas posibilidades.</p></div><button class="nav-item logout" (click)="logout()" [disabled]="leaving()"><span>⇥</span> {{leaving() ? 'Saliendo…' : 'Cerrar sesión'}}</button></div></aside>
   <main class="dashboard" id="overview"><header class="topbar"><span>Mi espacio <b>/</b> <strong>Dashboard</strong></span><div class="user-pill"><span class="online-dot"></span><span>{{data()?.profile?.name ?? 'Mi cuenta'}}</span><span class="avatar">{{initial()}}</span></div></header>
     @if (session.isDemo()) { <div class="demo-banner"><span>DEMO</span> Estás explorando con datos de ejemplo. Los cambios no se guardan en la base de datos.</div> }
@@ -27,19 +27,19 @@ type Filter = 'all' | 'active' | 'completed';
           @else { <app-trip-request [busy]="requesting()" (request)="requestTrip($event)"/> }
         </section></div>
       <section class="stats" aria-label="Resumen de viajes"><article><span class="stat-symbol blue">↗</span><div><span>Total de viajes</span><strong>{{view.trips.length}}</strong></div><small>Tu actividad</small></article><article><span class="stat-symbol green">✓</span><div><span>Viajes finalizados</span><strong>{{completedCount()}}</strong></div><small>Destinos alcanzados</small></article><article><span class="stat-symbol orange">◷</span><div><span>Viajes activos</span><strong>{{activeCount()}}</strong></div><small>En movimiento</small></article></section>
-      <section class="history-card" id="trips"><div class="section-heading"><div><h2>Mis viajes</h2><p class="muted">Tu actividad, en un solo lugar.</p></div><div class="filters" aria-label="Filtrar viajes"><button [class.active]="filter() === 'all'" [attr.aria-pressed]="filter() === 'all'" (click)="filter.set('all')">Todos</button><button [class.active]="filter() === 'active'" [attr.aria-pressed]="filter() === 'active'" (click)="filter.set('active')">Activos</button><button [class.active]="filter() === 'completed'" [attr.aria-pressed]="filter() === 'completed'" (click)="filter.set('completed')">Finalizados</button></div></div><app-trip-list [trips]="filteredTrips()" [currentUserId]="view.profile.id" (pay)="payment.set($event)"/></section>
+      <section class="history-card" id="trips"><div class="section-heading"><div><h2>Mis viajes</h2><p class="muted">Tu actividad, en un solo lugar.</p></div><div class="filters" aria-label="Filtrar viajes"><button [class.active]="filter() === 'all'" [attr.aria-pressed]="filter() === 'all'" (click)="filter.set('all')">Todos</button><button [class.active]="filter() === 'active'" [attr.aria-pressed]="filter() === 'active'" (click)="filter.set('active')">Activos</button><button [class.active]="filter() === 'completed'" [attr.aria-pressed]="filter() === 'completed'" (click)="filter.set('completed')">Finalizados</button></div></div><app-trip-list [trips]="filteredTrips()" [currentUserId]="view.profile.id" [payments]="view.payments" (pay)="payment.set($event)"/></section>
     } @else if (loading()) { <div class="loading-panel" role="status">Preparando tu espacio…</div> }
     <footer class="dashboard-footer"><span>RideMove · Movilidad que conecta</span><span>{{data() ? roles[data()!.profile.role] : ''}}</span></footer>
-  </main></div>@if (payment(); as trip) { <app-payment-demo [trip]="trip" (close)="payment.set(null)"/> }` })
+  </main></div>@if (payment(); as trip) { <app-payment [trip]="trip" (close)="payment.set(null)"/> }` })
 export class DashboardComponent implements OnInit {
   readonly session = inject(SessionService); private readonly rides = inject(RideGateway); private readonly router = inject(Router);
   readonly data = signal<DashboardData | null>(null); readonly loading = signal(false); readonly error = signal(''); readonly notice = signal('');
   readonly requesting = signal(false); readonly leaving = signal(false); readonly payment = signal<Trip | null>(null); readonly filter = signal<Filter>('all'); readonly roles = ROLE_LABEL;
   readonly firstName = computed(() => this.data()?.profile.name.split(' ')[0] ?? 'viajero');
   readonly initial = computed(() => this.firstName().charAt(0).toUpperCase());
-  readonly activeCount = computed(() => this.data()?.trips.filter(t => ['pending', 'accepted', 'in_progress'].includes(t.status)).length ?? 0);
+  readonly activeCount = computed(() => this.data()?.trips.filter(t => ['pending', 'accepted', 'arrived', 'in_progress'].includes(t.status)).length ?? 0);
   readonly completedCount = computed(() => this.data()?.trips.filter(t => t.status === 'completed').length ?? 0);
-  readonly filteredTrips = computed(() => (this.data()?.trips ?? []).filter(t => this.filter() === 'all' || (this.filter() === 'completed' ? t.status === 'completed' : ['pending', 'accepted', 'in_progress'].includes(t.status))));
+  readonly filteredTrips = computed(() => (this.data()?.trips ?? []).filter(t => this.filter() === 'all' || (this.filter() === 'completed' ? t.status === 'completed' : ['pending', 'accepted', 'arrived', 'in_progress'].includes(t.status))));
   ngOnInit(): void { this.load(); }
   load(): void {
     if (this.loading()) return; this.loading.set(true); this.error.set('');

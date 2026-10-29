@@ -20,6 +20,7 @@ void main() {
     () async {
       final repo = DemoRepository();
       await repo.signIn('driver', '');
+      await repo.command('set_availability', {'p_available': true});
       await repo.command('transition_trip', {
         'p_id': '1',
         'p_status': 'accepted',

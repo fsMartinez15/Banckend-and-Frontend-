@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import '../domain/ride_repository.dart';
 import '../domain/route_planner.dart';
@@ -33,8 +34,10 @@ class OpenRouteAdapter implements RoutePlanner {
         final response = await client
             .get(
               uri,
+              // En navegador no se envía User-Agent: provoca un preflight CORS que OSRM rechaza.
               headers: {
-                'User-Agent': 'RideMove/1.0 (co.ridemove.ridemove)',
+                if (!kIsWeb)
+                  'User-Agent': 'RideMove/1.0 (co.ridemove.ridemove)',
                 'Accept': 'application/json',
               },
             )
@@ -184,6 +187,39 @@ class OpenRouteAdapter implements RoutePlanner {
     if (_routes.length >= 50) _routes.remove(_routes.keys.first);
     _routes[key] = route;
     return route;
+  }
+
+  final _names = <String, String?>{};
+
+  @override
+  Future<String?> reverse(Coordinates point) async {
+    final key =
+        '${point.latitude.toStringAsFixed(4)},${point.longitude.toStringAsFixed(4)}';
+    if (_names.containsKey(key)) return _names[key];
+    final data = await _get(
+      Uri.parse('$geocoderUrl/reverse').replace(
+        queryParameters: {
+          'lat': point.latitude.toStringAsFixed(6),
+          'lon': point.longitude.toStringAsFixed(6),
+          'limit': '1',
+        },
+      ),
+    );
+    final features = data['features'] as List? ?? const [];
+    String? name;
+    if (features.isNotEmpty) {
+      final props = features.first['properties'] as Map;
+      final street = props['street'], number = props['housenumber'];
+      name = [
+        if (props['name'] != null) props['name'],
+        if (street != null) number == null ? street : '$street # $number',
+        if (props['district'] != null) props['district'],
+      ].map((e) => '$e').toSet().take(2).join(', ');
+      if (name.isEmpty) name = null;
+    }
+    if (_names.length >= 200) _names.remove(_names.keys.first);
+    _names[key] = name;
+    return name;
   }
 
   static String instruction(Map step) {

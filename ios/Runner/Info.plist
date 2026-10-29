@@ -5,7 +5,7 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
-    <string>RideMove comparte tu ubicación con el pasajero de tu viaje activo cuando tú lo solicitas.</string>
+    <string>RideMove usa tu ubicación para recogerte donde estás y, si conduces, para mostrar tu posición al pasajero durante el viaje.</string>
     <key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

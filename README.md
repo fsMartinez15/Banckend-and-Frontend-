@@ -22,6 +22,58 @@ El núcleo está en `backend/src/main/java/co/ridemove/domain` y `application`.
 No importa Spring ni Supabase. `RideService` implementa `RideUseCases` y recibe
 puertos independientes de perfiles, viajes, vehículos y ubicación.
 
+## Registro con cédula, login y pagos con Wompi (oct. 2026)
+
+- **Registro**: el cliente (pasajero) se registra con nombre, tipo y número de documento
+  (cédula obligatoria), celular, correo y contraseña. El conductor puede dejar el documento vacío.
+  Una cédula solo puede tener una cuenta.
+- **Login**: con correo **o** con número de cédula, en `/login`.
+- **Pago**: en *Mis viajes*, cada viaje finalizado del cliente muestra «Pagar con Wompi». El
+  backend crea la referencia, firma el pago (integridad SHA-256) y redirige al Web Checkout de
+  Wompi. Al volver, `/pago/resultado?id=…` consulta la transacción en Wompi; el evento firmado
+  `POST /api/payments/wompi/events` confirma el pago aunque el usuario cierre la página.
+  Un pago aprobado marca el viaje como «Pagado ✓». Tarifa fija: `RIDE_FARE_COP` (8.000 por defecto).
+
+Pasos de activación:
+
+1. En el SQL Editor de Supabase ejecuta `supabase/migrations/202610280001_cedula_wompi.sql`.
+2. Ejecuta `supabase/seed/usuarios_iniciales.sql` para crear administrador, conductor y cliente
+   (credenciales en `docs/RideMove_Usuarios_y_Roles.docx`).
+3. En `backend/.env` agrega `SUPABASE_SERVICE_KEY` (Supabase → Settings → API Keys → *secret*).
+   Sin ella no funcionan el login con cédula ni los pagos. Las llaves `WOMPI_*` ya están en ese archivo.
+4. Recompila e inicia: `mvn -f backend/pom.xml verify` y `./tools/start_backend.ps1`.
+5. En el panel de Wompi → Desarrolladores → *URL de eventos* registra
+   `https://TU-API-PUBLICA/api/payments/wompi/events` (requiere el backend publicado con HTTPS).
+   En producción cambia `WOMPI_REDIRECT_URL` por la URL pública del frontend + `/pago/resultado`.
+
+Las llaves privada, de eventos y de integridad solo viven en `backend/.env` (ignorado por Git);
+nunca se envían al navegador.
+
+## Viaje tipo Uber en la app móvil (oct. 2026)
+
+**Pasajero**: el mapa abre en su ubicación GPS con los conductores conectados cerca.
+«¿A dónde vas?» busca el destino mientras escribe (o se marca en el mapa), traza la ruta
+por calles y muestra distancia, tiempo y **tarifa** (banderazo + km + minuto, con mínima).
+Elige **efectivo** o **tarjeta/Nequi/PSE (Wompi)** y solicita. Luego ve: *Buscando
+conductor* → *Llega en N min* (conductor, calificación, vehículo, placa y botón para
+llamar; el auto se mueve en el mapa) → *Tu conductor llegó* → *En viaje* con hora de
+llegada → *¡Llegaste!* para pagar con Wompi y calificar. Puede cancelar antes de iniciar.
+
+**Conductor**: «Conectarme» comparte su ubicación y muestra las solicitudes ordenadas por
+cercanía con tarifa, medio de pago y distancia a la recogida. Acepta (el primero que acepta
+se lleva el viaje), navega con Waze, marca *Llegué al punto*, *Iniciar viaje* y
+*Finalizar viaje*; al terminar ve cuánto cobrar. Puede liberar un viaje aceptado (vuelve a
+la cola para otros). Ganancias del día en la parte superior.
+
+**Demo** (`flutter run` sin configuración): al pedir un viaje como pasajero, un conductor
+simulado acepta, se acerca, llega, inicia y termina el viaje. Como conductor llegan
+solicitudes nuevas cada pocos segundos.
+
+Activación en Supabase: ejecuta `supabase/migrations/202610290001_viaje_tipo_uber.sql`
+(después de la de cédula y Wompi). La tarifa se cambia en la tabla `public.tariff`
+(valores en centavos): banderazo $3.500, $1.100/km, $250/min, mínima $6.000. La tarifa
+definitiva la calcula la base de datos; el teléfono solo muestra la estimación.
+
 ## Funciones incluidas
 
 - Registro e inicio de sesión para pasajeros y conductores.

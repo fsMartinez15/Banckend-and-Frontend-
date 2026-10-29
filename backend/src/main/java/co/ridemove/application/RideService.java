@@ -11,8 +11,12 @@ public final class RideService implements RideUseCases {
     private final TripPort rides;
     private final VehiclePort cars;
     private final LocationPort gps;
+    private final PaymentReadPort paid;
+    public RideService(ProfilePort people, TripPort rides, VehiclePort cars, LocationPort gps, PaymentReadPort paid) {
+        this.people=people; this.rides=rides; this.cars=cars; this.gps=gps; this.paid=paid;
+    }
     public RideService(ProfilePort people, TripPort rides, VehiclePort cars, LocationPort gps) {
-        this.people=people; this.rides=rides; this.cars=cars; this.gps=gps;
+        this(people, rides, cars, gps, List::of);
     }
     public Profile profile() { return people.currentProfile(); }
     private Profile actor() { var p=profile(); p.requireActive(); return p; }
@@ -20,16 +24,24 @@ public final class RideService implements RideUseCases {
     public List<Trip> trips() { actor(); return rides.trips(); }
     public List<Vehicle> vehicles() { actor(); return cars.vehicles(); }
     public List<DriverLocation> locations() { actor(); return gps.locations(); }
+    public List<Payment> payments() { actor(); return paid.payments(); }
     private Trip trip(String id) {
         return rides.trips().stream().filter(t -> t.id().equals(id)).findFirst()
                 .orElseThrow(() -> new BusinessRule("Viaje no encontrado o sin acceso"));
     }
-    public void createTrip(String origin, String destination) {
+    public void createTrip(String origin, String destination) { requestTrip(TripDraft.of(origin, destination)); }
+    public void requestTrip(TripDraft draft) {
         var p=actor(); p.requireRole("passenger");
-        var from=text(origin,3,150,"Origen"); var to=text(destination,3,150,"Destino");
-        require(!from.equalsIgnoreCase(to),"Origen y destino deben ser diferentes");
+        require(draft!=null,"Faltan los datos del viaje");
+        var valid=draft.validated();
         require(rides.trips().stream().noneMatch(t -> t.passenger_id().equals(p.id()) && t.active()), "Ya tienes un viaje activo");
-        rides.createTrip(from,to);
+        rides.requestTrip(valid);
+    }
+    public Tariff tariff() { actor(); return rides.tariff(); }
+    public List<NearbyDriver> nearbyDrivers(double latitude, double longitude) {
+        actor();
+        require(Double.isFinite(latitude) && Math.abs(latitude)<=90 && Double.isFinite(longitude) && Math.abs(longitude)<=180,"Coordenadas inválidas");
+        return gps.nearbyDrivers(latitude,longitude);
     }
     public void transitionTrip(String id, String status) {
         var p=actor(); var t=trip(id); t.validateTransition(p,status);
@@ -74,7 +86,7 @@ public final class RideService implements RideUseCases {
     public void saveLocation(double latitude,double longitude) {
         var p=actor(); p.requireRole("driver");
         var point=new DriverLocation(p.id(),latitude,longitude,null);
-        require(rides.trips().stream().anyMatch(t -> p.id().equals(t.driver_id()) && (t.status().equals("accepted") || t.status().equals("in_progress"))),"No tienes un viaje activo");
+        require(p.available() || rides.trips().stream().anyMatch(t -> p.id().equals(t.driver_id()) && Trip.ASSIGNED.contains(t.status())),"Conéctate para compartir tu ubicación");
         gps.saveLocation(point);
     }
 }

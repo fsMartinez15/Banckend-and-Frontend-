@@ -9,5 +9,6 @@ export const routes: Routes = [
   { path: 'login', loadComponent: () => import('./auth/login.component').then(m => m.LoginComponent) },
   { path: 'registro', loadComponent: () => import('./auth/register.component').then(m => m.RegisterComponent) },
   { path: 'dashboard', canActivate: [authenticated], providers: [{ provide: RideGateway, useClass: SessionRideGateway }], loadComponent: () => import('./dashboard/dashboard.component').then(m => m.DashboardComponent) },
+  { path: 'pago/resultado', loadComponent: () => import('./dashboard/payment-result.component').then(m => m.PaymentResultComponent) },
   { path: '', pathMatch: 'full', redirectTo: 'login' }, { path: '**', redirectTo: 'login' }
 ];

@@ -63,3 +63,6 @@ android/key.properties
 *.jks
 *.keystore
 *.inspect.ndjson
+
+# Contiene contraseñas iniciales
+supabase/seed/usuarios_iniciales.sql

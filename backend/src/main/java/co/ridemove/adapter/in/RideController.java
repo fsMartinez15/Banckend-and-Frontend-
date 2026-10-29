@@ -10,7 +10,8 @@ import java.util.List;
 public class RideController {
     private final RideUseCases app;
     public RideController(RideUseCases app) { this.app=app; }
-    public record Route(String origin,String destination) {}
+    public record Route(String origin,String destination,Double origin_lat,Double origin_lng,Double destination_lat,
+                        Double destination_lng,Integer distance_m,Integer duration_s,String payment_method) {}
     public record State(String status) {}
     public record Rating(Integer rating,String comment) {}
     public record Person(String name,String phone) {}
@@ -23,7 +24,12 @@ public class RideController {
     @GetMapping("/vehicles") public List<Vehicle> vehicles() { return app.vehicles(); }
     @GetMapping("/locations") public List<DriverLocation> locations() { return app.locations(); }
     @PostMapping("/trips") @ResponseStatus(HttpStatus.CREATED)
-    public void create(@RequestBody Route body) { app.createTrip(body.origin(),body.destination()); }
+    public void create(@RequestBody Route body) {
+        app.requestTrip(new TripDraft(body.origin(),body.destination(),body.origin_lat(),body.origin_lng(),body.destination_lat(),
+                body.destination_lng(),body.distance_m(),body.duration_s(),body.payment_method()));
+    }
+    @GetMapping("/tariff") public Tariff tariff() { return app.tariff(); }
+    @GetMapping("/drivers/nearby") public List<NearbyDriver> nearby(@RequestParam double lat,@RequestParam double lng) { return app.nearbyDrivers(lat,lng); }
     @PutMapping("/trips/{id}/status") public void transition(@PathVariable String id,@RequestBody State body) { app.transitionTrip(id,body.status()); }
     @PostMapping("/trips/{id}/rejections") public void reject(@PathVariable String id) { app.rejectTrip(id); }
     @PostMapping("/trips/{id}/rating") public void rate(@PathVariable String id,@RequestBody Rating body) {
